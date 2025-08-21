@@ -1,29 +1,37 @@
 import json
 import os
 from typing import Dict, List, Tuple
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
+
+try:
+    from sentence_transformers import SentenceTransformer
+    from sklearn.metrics.pairwise import cosine_similarity
+    SENTENCE_TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    print("⚠️  sentence-transformers not available. Install with: pip install sentence-transformers")
+    SENTENCE_TRANSFORMERS_AVAILABLE = False
 
 class FAQModule:
     """
-    FAQ Q&A module using TF-IDF vectorization and cosine similarity
+    FAQ Q&A module using Sentence Transformers for semantic similarity
     to find the most relevant answers to user questions.
     """
     
-    def __init__(self, faq_file: str = "faq.json"):
+    def __init__(self, faq_file: str = "faq.json", model_name: str = "all-MiniLM-L6-v2"):
         """
         Initialize the FAQ module.
         
         Args:
             faq_file (str): Path to FAQ JSON file, or use default hardcoded data
+            model_name (str): Sentence transformer model to use
         """
         self.faq_data = self._load_faq_data(faq_file)
         self.questions = list(self.faq_data.keys())
         self.answers = list(self.faq_data.values())
-        self.vectorizer = None
-        self.question_vectors = None
-        self._initialize_vectorizer()
+        self.model = None
+        self.question_embeddings = None
+        self.model_name = model_name
+        self._initialize_model()
     
     def _load_faq_data(self, faq_file: str) -> Dict[str, str]:
         """
@@ -63,30 +71,29 @@ class FAQModule:
             "do you offer payment plans?": "Yes, we offer flexible payment plans. You can pay the full $500 upfront or choose from our installment options: 2 payments of $275 or 3 payments of $190."
         }
     
-    def _initialize_vectorizer(self):
-        """Initialize the TF-IDF vectorizer and compute question vectors."""
-        try:
-            self.vectorizer = TfidfVectorizer(
-                lowercase=True,
-                stop_words='english',
-                ngram_range=(1, 3),
-                max_features=2000,
-                min_df=1,
-                max_df=1.0
-            )
+    def _initialize_model(self):
+        """Initialize the Sentence Transformer model and compute question embeddings."""
+        if not SENTENCE_TRANSFORMERS_AVAILABLE:
+            print("❌ Sentence Transformers not available. Please install with: pip install sentence-transformers")
+            return
             
-            # Fit and transform the questions
-            self.question_vectors = self.vectorizer.fit_transform(self.questions)
-            print(f"✓ FAQ module initialized with {len(self.questions)} questions")
+        try:
+            print(f"🔄 Loading sentence transformer model: {self.model_name}")
+            self.model = SentenceTransformer(self.model_name)
+            
+            # Encode all questions to get embeddings
+            print("🔄 Computing question embeddings...")
+            self.question_embeddings = self.model.encode(self.questions)
+            print(f"✓ FAQ module initialized with {len(self.questions)} questions using Sentence Transformers")
             
         except Exception as e:
-            print(f"❌ Error initializing FAQ vectorizer: {e}")
-            self.vectorizer = None
-            self.question_vectors = None
+            print(f"❌ Error initializing Sentence Transformer model: {e}")
+            self.model = None
+            self.question_embeddings = None
     
-    def get_faq_answer(self, query: str, similarity_threshold: float = 0.4) -> str:
+    def get_faq_answer(self, query: str, similarity_threshold: float = 0.5) -> str:
         """
-        Find the most relevant FAQ answer for a given query.
+        Find the most relevant FAQ answer for a given query using semantic similarity.
         
         Args:
             query (str): User's question
@@ -95,66 +102,30 @@ class FAQModule:
         Returns:
             str: Best matching answer or fallback response
         """
-        if not self.vectorizer or self.question_vectors is None:
+        if not self.model or self.question_embeddings is None:
             return "I'm sorry, the FAQ system is not available right now."
         
         try:
-            # First try keyword matching for better accuracy
-            query_lower = query.lower()
-            keyword_matches = []
+            # Encode the user query
+            query_embedding = self.model.encode([query])
             
-            for i, question in enumerate(self.questions):
-                question_lower = question.lower()
-                
-                # Check for exact phrase matches first (highest priority)
-                if any(phrase in query_lower for phrase in ["cost", "price", "fee", "how much"]) and any(phrase in question_lower for phrase in ["cost", "price", "fee"]):
-                    score = 15  # Highest score for cost-related questions
-                elif any(phrase in query_lower for phrase in ["certificate", "certification"]) and any(phrase in question_lower for phrase in ["certificate", "certification"]):
-                    score = 10  # High score for certificate-related questions
-                elif any(phrase in query_lower for phrase in ["background", "prerequisites", "requirements", "need to know", "do i need"]) and any(phrase in question_lower for phrase in ["background", "prerequisites", "requirements", "technical background"]):
-                    score = 12   # High score for requirement-related questions
-                elif any(phrase in query_lower for phrase in ["part-time", "flexible", "work while"]) and any(phrase in question_lower for phrase in ["part-time", "flexible"]):
-                    score = 8   # High score for flexibility-related questions
-                elif any(phrase in query_lower for phrase in ["guarantee", "refund", "satisfied"]) and any(phrase in question_lower for phrase in ["guarantee", "refund"]):
-                    score = 8   # High score for guarantee-related questions
-                else:
-                    # General keyword matching
-                    key_terms = ["program", "duration", "time", "technical", "support", "materials"]
-                    score = 0
-                    for term in key_terms:
-                        if term in query_lower and term in question_lower:
-                            score += 1
-                
-                if score > 0:
-                    keyword_matches.append((i, score))
+            # Calculate cosine similarity between query and all questions
+            similarities = cosine_similarity(query_embedding, self.question_embeddings).flatten()
             
-            # Use keyword matching if we found good matches
-            if keyword_matches:
-                # Sort by score and use the best match
-                keyword_matches.sort(key=lambda x: x[1], reverse=True)
-                best_keyword_idx = keyword_matches[0][0]
-                best_question = self.questions[best_keyword_idx]
-                best_answer = self.answers[best_keyword_idx]
-                
-                print(f"🔍 FAQ Match (Keyword): '{query}' → '{best_question}' (keyword score: {keyword_matches[0][1]})")
-                return best_answer
-            
-            # Fallback to TF-IDF similarity if no keyword matches
-            query_vector = self.vectorizer.transform([query])
-            similarities = cosine_similarity(query_vector, self.question_vectors).flatten()
+            # Find the best match
             best_match_idx = np.argmax(similarities)
             best_similarity = similarities[best_match_idx]
             
-            # If TF-IDF similarity is good, use it
+            # Check if similarity meets threshold
             if best_similarity >= similarity_threshold:
                 best_question = self.questions[best_match_idx]
                 best_answer = self.answers[best_match_idx]
                 
-                print(f"🔍 FAQ Match (TF-IDF): '{query}' → '{best_question}' (similarity: {best_similarity:.3f})")
+                print(f"🔍 FAQ Match (Semantic): '{query}' → '{best_question}' (similarity: {best_similarity:.3f})")
                 return best_answer
-            
-            print(f"❓ No FAQ match found for: '{query}' (TF-IDF similarity: {best_similarity:.3f})")
-            return "I don't have a specific answer for that question. Could you please rephrase it or ask something else?"
+            else:
+                print(f"❓ No FAQ match found for: '{query}' (best similarity: {best_similarity:.3f})")
+                return "I don't have a specific answer for that question. Could you please rephrase it or ask something else?"
                 
         except Exception as e:
             print(f"❌ Error in FAQ matching: {e}")
@@ -162,7 +133,7 @@ class FAQModule:
     
     def get_similar_questions(self, query: str, top_k: int = 3) -> List[Tuple[str, float]]:
         """
-        Get top-k most similar questions for a given query.
+        Get top-k most similar questions for a given query using semantic similarity.
         
         Args:
             query (str): User's question
@@ -171,12 +142,12 @@ class FAQModule:
         Returns:
             List[Tuple[str, float]]: List of (question, similarity_score) tuples
         """
-        if not self.vectorizer or self.question_vectors is None:
+        if not self.model or self.question_embeddings is None:
             return []
         
         try:
-            query_vector = self.vectorizer.transform([query])
-            similarities = cosine_similarity(query_vector, self.question_vectors).flatten()
+            query_embedding = self.model.encode([query])
+            similarities = cosine_similarity(query_embedding, self.question_embeddings).flatten()
             
             # Get top-k indices
             top_indices = np.argsort(similarities)[::-1][:top_k]
@@ -208,8 +179,8 @@ class FAQModule:
             self.questions.append(question)
             self.answers.append(answer)
             
-            # Reinitialize vectorizer with new data
-            self._initialize_vectorizer()
+            # Reinitialize model with new data
+            self._initialize_model()
             
             print(f"✓ Added new FAQ item: '{question}'")
             return True
@@ -298,33 +269,37 @@ def is_question_like(text: str) -> bool:
 
 # Test block
 if __name__ == "__main__":
-    print("🧪 Testing FAQ Module...")
-    print("=" * 50)
+    print("🧪 Testing FAQ Module with Sentence Transformers...")
+    print("=" * 60)
     
     # Initialize FAQ module
     faq = FAQModule()
     
-    # Test queries
+    # Test queries (including variations and paraphrases)
     test_queries = [
         "How much does the program cost?",
+        "What's the price of this course?",
         "Do I need to know programming?",
         "Can I work while studying?",
+        "Is it possible to do this part-time?",
         "What if I'm not satisfied?",
         "Tell me about the certificate",
+        "Do you provide any certification?",
+        "How long will this take?",
         "Random unrelated text here"
     ]
     
-    print("\n📝 Testing FAQ matching:")
-    print("-" * 40)
+    print("\n📝 Testing semantic FAQ matching:")
+    print("-" * 50)
     
     for query in test_queries:
         print(f"\nQuery: '{query}'")
         answer = faq.get_faq_answer(query)
-        print(f"Answer: {answer}")
+        print(f"Answer: {answer[:100]}..." if len(answer) > 100 else f"Answer: {answer}")
     
     # Test similar questions
-    print(f"\n🔍 Testing similar questions for 'cost':")
-    similar = faq.get_similar_questions("cost", top_k=3)
+    print(f"\n🔍 Testing similar questions for 'programming background':")
+    similar = faq.get_similar_questions("programming background", top_k=3)
     for question, similarity in similar:
         print(f"  - {question} (similarity: {similarity:.3f})")
     
