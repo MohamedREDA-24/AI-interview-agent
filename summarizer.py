@@ -1,19 +1,43 @@
 import json
+import os
 from typing import Dict, Any
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 class InterviewSummarizer:
     """
-    Simple interview summarization module that extracts key information
-    from candidate responses without complex AI dependencies.
+    AI-powered interview summarization module using Gemini Pro for accurate extraction.
+    Falls back to rule-based extraction if Gemini is unavailable.
     """
     
     def __init__(self):
         """Initialize the summarizer."""
-        pass
+        self.use_gemini = False
+        self.gemini_model = None
+        self._init_gemini()
+    
+    def _init_gemini(self):
+        """Initialize Gemini Pro if API key is available."""
+        try:
+            import google.generativeai as genai
+            api_key = os.getenv('GOOGLE_API_KEY')
+            if api_key:
+                genai.configure(api_key=api_key)
+                self.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+                self.use_gemini = True
+                print("✓ Gemini Pro initialized successfully")
+            else:
+                print("⚠️  GOOGLE_API_KEY not found, using rule-based summarization")
+        except ImportError:
+            print("⚠️  google-generativeai not available, using rule-based summarization")
+        except Exception as e:
+            print(f"⚠️  Gemini initialization failed: {e}, using rule-based summarization")
     
     def summarize_candidate(self, candidate_data: Dict[str, Any]) -> str:
         """
-        Summarize candidate interview responses into structured JSON.
+        Summarize candidate interview responses using Gemini Pro or fallback to rules.
         
         Args:
             candidate_data (dict): Dictionary containing candidate responses
@@ -27,8 +51,12 @@ class InterviewSummarizer:
             str: JSON string summary with structured fields
         """
         try:
-            # Extract key information from responses
-            summary = self._extract_summary_data(candidate_data)
+            if self.use_gemini and self.gemini_model:
+                # Use Gemini Pro for intelligent extraction
+                summary = self._extract_with_gemini(candidate_data)
+            else:
+                # Fallback to rule-based extraction
+                summary = self._extract_summary_data(candidate_data)
             
             # Convert to JSON
             return json.dumps(summary, indent=2)
@@ -36,6 +64,105 @@ class InterviewSummarizer:
         except Exception as e:
             print(f"Summarization failed: {e}")
             return self._fallback_summary(candidate_data)
+    
+    def _extract_with_gemini(self, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Use Gemini Pro to intelligently extract information from interview responses.
+        """
+        try:
+            # Format the interview data for Gemini
+            interview_text = self._format_for_gemini(candidate_data)
+            
+            # Create a detailed prompt for Gemini
+            prompt = f"""
+            Analyze this interview transcript and extract key information into a structured format.
+            
+            INTERVIEW TRANSCRIPT:
+            {interview_text}
+            
+            Please extract and structure the following information:
+            1. **name**: Full name of the candidate
+            2. **background**: Educational background, work experience, qualifications
+            3. **interest**: Why they're interested in the program/position
+            4. **experience**: Technical skills, relevant experience, expertise areas
+            5. **goals**: Short-term and long-term career goals
+            6. **readiness**: When they can start, availability timeline
+            7. **assessment**: Overall assessment of the candidate
+            8. **strengths**: Key strengths and positive qualities
+            9. **concerns**: Any concerns or areas for improvement
+            10. **recommendation**: Hiring recommendation (Strong/Moderate/Weak)
+            
+            Return ONLY a valid JSON object with these exact field names. Be accurate and extract real information from the responses, don't make assumptions.
+            """
+            
+            # Generate response from Gemini
+            response = self.gemini_model.generate_content(prompt)
+            response_text = response.text.strip()
+            
+            # Try to extract JSON from the response
+            try:
+                # Look for JSON content between ```json and ``` markers
+                if "```json" in response_text:
+                    json_start = response_text.find("```json") + 7
+                    json_end = response_text.find("```", json_start)
+                    if json_end != -1:
+                        json_content = response_text[json_start:json_end].strip()
+                        summary = json.loads(json_content)
+                    else:
+                        raise ValueError("JSON markers not properly closed")
+                else:
+                    # Try to find JSON content directly
+                    summary = json.loads(response_text)
+                
+                # Validate and clean the summary
+                summary = self._validate_gemini_summary(summary)
+                return summary
+                
+            except json.JSONDecodeError as e:
+                print(f"Failed to parse Gemini JSON response: {e}")
+                print(f"Raw response: {response_text}")
+                # Fallback to rule-based extraction
+                return self._extract_summary_data(candidate_data)
+                
+        except Exception as e:
+            print(f"Gemini extraction failed: {e}")
+            # Fallback to rule-based extraction
+            return self._extract_summary_data(candidate_data)
+    
+    def _format_for_gemini(self, candidate_data: Dict[str, Any]) -> str:
+        """Format interview data for Gemini processing."""
+        formatted_lines = []
+        for key, data in sorted(candidate_data.items()):
+            question_num = key.split('_')[1]
+            formatted_lines.append(f"Question {question_num}: {data['question']}")
+            formatted_lines.append(f"Answer: {data['answer']}")
+            formatted_lines.append("")
+        return "\n".join(formatted_lines)
+    
+    def _validate_gemini_summary(self, summary: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate and clean the Gemini-generated summary."""
+        required_fields = [
+            "name", "background", "interest", "experience", "goals", 
+            "readiness", "assessment", "strengths", "concerns", "recommendation"
+        ]
+        
+        # Ensure all required fields exist
+        for field in required_fields:
+            if field not in summary:
+                summary[field] = "Not specified"
+        
+        # Ensure strengths and concerns are lists
+        if not isinstance(summary.get("strengths"), list):
+            summary["strengths"] = [summary.get("strengths", "Not specified")]
+        if not isinstance(summary.get("concerns"), list):
+            summary["concerns"] = [summary.get("concerns", "Not specified")]
+        
+        # Clean up any None values
+        for field in summary:
+            if summary[field] is None:
+                summary[field] = "Not specified"
+        
+        return summary
     
     def _extract_summary_data(self, candidate_data: Dict[str, Any]) -> Dict[str, Any]:
         """Extract and structure summary data from candidate responses."""
