@@ -15,6 +15,7 @@ import json
 from logger import InterviewLogger, generate_session_id
 from summarizer import InterviewSummarizer
 from faq import FAQModule, is_question_like
+from scheduler import MockScheduler
 
 # Try to import voice modules
 try:
@@ -61,6 +62,7 @@ class VoiceInterviewAgent:
         self.logger = InterviewLogger()
         self.summarizer = InterviewSummarizer()
         self.faq = FAQModule()
+        self.scheduler = MockScheduler()
         
         # Interview configuration
         self.questions = [
@@ -275,20 +277,20 @@ class VoiceInterviewAgent:
             return text
             
         except sr.WaitTimeoutError:
-            print("⏰ No speech detected within timeout")
-            print("🎤 Please speak your answer:")
+            print("⏰ I didn't hear anything - no worries!")
+            print("🎤 Take your time, I'm listening:")
             return self.listen()  # Retry listening
         except sr.UnknownValueError:
-            print("❓ Could not understand speech")
-            print("🎤 Please speak more clearly:")
+            print("❓ I couldn't quite catch that - happens to the best of us!")
+            print("🎤 Could you try speaking a bit more clearly? I'm all ears:")
             return self.listen()  # Retry listening
         except sr.RequestError as e:
-            print(f"❌ Speech recognition error: {e}")
-            print("🎤 Please try speaking again:")
+            print(f"❌ Having a small technical hiccup: {e}")
+            print("🎤 Let's try that again - I'm ready when you are:")
             return self.listen()  # Retry listening
         except Exception as e:
-            print(f"❌ Unexpected error: {e}")
-            print("🎤 Please try speaking again:")
+            print(f"❌ Something unexpected happened: {e}")
+            print("🎤 No problem, let's give it another shot:")
             return self.listen()  # Retry listening
     
     def get_llm_response(self, user_input: str, context: str = "") -> str:
@@ -298,13 +300,14 @@ class VoiceInterviewAgent:
         
         try:
             prompt = f"""
-            You are a professional AI interview assistant. The candidate just said: "{user_input}"
+            You are a warm, friendly AI interview assistant having a natural conversation. The candidate just said: "{user_input}"
             
             Context: {context}
             
-            Provide a brief, professional response. Keep it short and direct.
-            If they're asking about the program, give a concise answer.
-            Do not provide coaching or suggestions - just answer their question directly.
+            Respond as if you're genuinely excited to get to know this person. Use encouraging language, 
+            show authentic interest in their thoughts, and make them feel comfortable and valued.
+            If they're asking about the program, answer with enthusiasm and personal touch.
+            Remember: this is a conversation between friends, not a formal interview. Answer their question directly.
             
             Response:"""
             
@@ -333,6 +336,83 @@ class VoiceInterviewAgent:
         context = f"Current question: {self.questions[self.current_question]}"
         return self.get_llm_response(user_input, context)
     
+    def schedule_interview(self) -> Optional[str]:
+        """
+        Schedule an interview session with the candidate.
+        
+        Returns:
+            str: Session ID if scheduled successfully, None otherwise
+        """
+        print("\n📅 SCHEDULING INTERVIEW SESSION")
+        print("=" * 50)
+        
+        # Get candidate information via text input
+        print("Let's schedule your interview! I'll need some basic information.")
+        print()
+        
+        # Get candidate name
+        candidate_name = input("What is your full name? ").strip()
+        if not candidate_name:
+            candidate_name = "Unknown Candidate"
+        
+        # Get candidate email
+        candidate_email = input("What is your email address? ").strip()
+        
+        # Get candidate phone
+        candidate_phone = input("What is your phone number? ").strip()
+        
+        # Show available slots
+        print("Let me check available interview times.")
+        available_slots = self.scheduler.get_available_slots(days_ahead=7)
+        
+        if not available_slots:
+            print("I'm sorry, but there are no available interview slots at the moment. Please try again later.")
+            return None
+        
+        # Present first few available slots
+        print(f"I have {len(available_slots)} available interview slots. Here are the next few options:")
+        
+        for i, slot in enumerate(available_slots[:5], 1):
+            slot_time = slot['formatted_time']
+            print(f"Option {i}: {slot_time}")
+        
+        # Ask for preference
+        print("Which option would you prefer? Enter the number (1-5):")
+        
+        user_choice = input("Enter choice: ").strip()
+        
+        selected_slot = None
+        
+        try:
+            choice_num = int(user_choice)
+            if 1 <= choice_num <= 5 and choice_num <= len(available_slots):
+                selected_slot = available_slots[choice_num - 1]
+            else:
+                print("Invalid choice. Selecting the first available slot.")
+                selected_slot = available_slots[0]
+        except ValueError:
+            print("Invalid input. Selecting the first available slot.")
+            selected_slot = available_slots[0]
+        
+        # Book the session
+        print(f"Booking your interview for {selected_slot['formatted_time']}.")
+        
+        session_id = self.scheduler.book_session(
+            candidate_name=candidate_name,
+            candidate_email=candidate_email,
+            candidate_phone=candidate_phone,
+            slot_id=selected_slot['slot_id'],
+            notes="Scheduled via text interface"
+        )
+        
+        if session_id:
+            print(f"Perfect! Your interview is scheduled for {selected_slot['formatted_time']}.")
+            print(f"✓ Interview scheduled: {session_id}")
+            return session_id
+        else:
+            print("I'm sorry, there was an issue scheduling your interview. Please try again or contact support.")
+            return None
+    
     def conduct_interview(self):
         """Conduct the complete voice interview."""
         print("🎯 Starting Voice-Based AI Interview Agent...")
@@ -349,12 +429,12 @@ class VoiceInterviewAgent:
         print("=" * 60)
         
         # Welcome message
-        welcome_msg = "Welcome to the AI Interview Agent! I'll be asking you some questions. Let's begin!"
+        welcome_msg = "Hello! I'm excited to chat with you today. I'm here to learn more about you and your interest in our AI program. Think of this as a friendly conversation rather than a formal interview. Ready to get started?"
         print(f"🤖 Agent: {welcome_msg}")
         self.speak(welcome_msg)
         
-        # Add a small delay to ensure speech system is ready
-        time.sleep(1)
+        # Add a small delay to ensure speech system is ready and create natural pacing
+        time.sleep(1.5)
         
         try:
             # Interview loop
@@ -364,12 +444,10 @@ class VoiceInterviewAgent:
                 
                 print(f"\n📝 Question {question_num}/{len(self.questions)}")
                 print("=" * 50)
-                print(f"🤖 AGENT ASKING: {question}")
-                print("=" * 50)
                 
-                # Ask the question
-                question_msg = f"Question {question_num}: {question}"
-                self.speak(question_msg)
+                # Ask the question simply like streamlit
+                print(f"🎤 Agent: {question}")
+                self.speak(question)
                 
                 # Get user response
                 user_answer = ""
@@ -379,17 +457,22 @@ class VoiceInterviewAgent:
                 while not user_answer.strip() and attempts < max_attempts:
                     attempts += 1
                     if attempts > 1:
-                        self.speak(f"Attempt {attempts}. Please try again.")
+                        encouraging_msgs = [
+                            "No worries at all! Take your time and try again.",
+                            "That's totally fine! Let's give it another go.",
+                            "No problem! I'm here whenever you're ready."
+                        ]
+                        self.speak(encouraging_msgs[min(attempts-2, len(encouraging_msgs)-1)])
                     
                     user_answer = self.listen()
                     
                     if not user_answer.strip():
                         if attempts >= max_attempts:
-                            self.speak("I'll move to the next question. You can answer this one later if needed.")
-                            user_answer = "[No answer provided]"
+                            self.speak("That's okay! Sometimes the audio can be tricky. Let's move forward and we can always come back to this if you'd like.")
+                            user_answer = "[Audio difficulties - no answer captured]"
                             break
                         else:
-                            self.speak("I didn't catch that. Could you please repeat your answer?")
+                            self.speak("I'm having trouble hearing you clearly. Could you try once more? I really want to make sure I capture your thoughts properly.")
                 
 
                 
@@ -399,8 +482,14 @@ class VoiceInterviewAgent:
                     response = self.handle_user_input(user_answer)
                     self.speak(response)
                     
-                    # Ask for the actual answer - be direct
-                    self.speak("Please answer the interview question now.")
+                    # Gently redirect to the question
+                    redirect_responses = [
+                        "That's a great question! I'd love to answer that in a moment. But first, could you help me understand your background?",
+                        "I appreciate your curiosity! Let me make sure I get to know you first, then I'll be happy to answer your questions.",
+                        "Excellent question! I'll definitely address that. Right now though, I'd love to hear more about your experience."
+                    ]
+                    redirect_msg = redirect_responses[min(question_num-1, len(redirect_responses)-1)]
+                    self.speak(redirect_msg)
                     user_answer = self.listen()
                 
                 # Store the answer
@@ -411,18 +500,17 @@ class VoiceInterviewAgent:
                     "timestamp": datetime.now().isoformat()
                 }
                 
-                # Provide feedback
-                feedback_msg = f"Answer recorded for question {question_num}."
-                self.speak(feedback_msg)
-                
+                # Simple acknowledgment like streamlit
                 print(f"✓ Answer recorded for question {question_num}")
                 
-                # Only ask for questions after the last question
+                # Simple transitions like streamlit
                 if question_num < len(self.questions):
-                    self.speak("Next question.")
+                    # Just a brief pause, no verbose transitions
+                    time.sleep(0.5)
                 else:
-                    # Allow multiple questions until user says no
-                    self.speak("Interview complete. Do you have questions about the program?")
+                    # Simple completion message
+                    time.sleep(0.5)
+                    self.speak("Thank you! Do you have any questions about the program?")
                     
                     while True:
                         user_question = self.listen()
@@ -434,7 +522,7 @@ class VoiceInterviewAgent:
                                       'nothing', 'nothing else', 'no more', 'thank you', 'thanks']
                         
                         if not user_question.strip() or any(phrase in user_lower for phrase in stop_phrases):
-                            self.speak("Thank you.")
+                            self.speak("Perfect! It's been such a pleasure talking with you today. Thank you for your time and thoughtful answers!")
                             break
                         
                         # Handle the question (skip LLM processing, go directly to FAQ or standard response)
@@ -454,7 +542,17 @@ class VoiceInterviewAgent:
                         self.speak(response)
                         
                         # Ask if they have more questions
-                        self.speak("Do you have any other questions?")
+                        follow_up_msgs = [
+                            "What else would you like to know? I'm here for as long as you need!",
+                            "Is there anything else I can help clarify? I love answering questions!",
+                            "Any other questions on your mind? Don't be shy - ask away!",
+                            "What other aspects of the program interest you? I could talk about this all day!",
+                            "Anything else you're curious about? I'm really enjoying our conversation!"
+                        ]
+                        import random
+                        # Small pause before asking for more questions
+                        time.sleep(0.7)
+                        self.speak(random.choice(follow_up_msgs))
             
             # Interview completed
             self._complete_interview()
@@ -469,10 +567,12 @@ class VoiceInterviewAgent:
     def _complete_interview(self):
         """Complete the interview and generate summary."""
         print("\n" + "=" * 60)
-        print("🎉 INTERVIEW COMPLETED!")
+        print("🎉 WHAT A GREAT CONVERSATION!")
         print("=" * 60)
         
-        completion_msg = "Generating interview summary."
+        completion_msg = "Thank you so much for that absolutely wonderful conversation! You've been such a pleasure to talk with, and I'm genuinely excited about your potential. I'm just putting together a thoughtful summary of our chat - this will only take a moment, and then you'll be all set!"
+        # Pause to let the positive message sink in
+        time.sleep(0.8)
         self.speak(completion_msg)
         
         # Generate transcript
@@ -523,7 +623,7 @@ class VoiceInterviewAgent:
             print("❌ Failed to save interview session!")
         
         print("\n" + "=" * 60)
-        print("🎯 Interview session completed!")
+        print("🎯 It's been wonderful getting to know you!")
         print("=" * 60)
     
     def _generate_transcript(self) -> str:
@@ -561,19 +661,68 @@ class VoiceInterviewAgent:
                 print("❌ Failed to save partial session")
 
 def main():
-    """Main function to run the voice interview agent."""
-    print("🎤 Starting Voice-Only AI Interview Agent...")
+    """Main function to run the interview agent."""
+    print("🎤 Welcome to Your AI Interview Experience!")
+    print("=" * 60)
+    print("Hey there! 👋 I'm excited to chat with you today.")
+    print("What would you like to do?")
+    print()
+    print("1. 📅 Schedule an interview for later")
+    print("2. 🎯 Let's chat right now!")
+    print("3. 📊 View my scheduled interviews")
+    print("=" * 60)
     
     try:
-        # Create and run the interview agent (voice only)
+        # Create the interview agent
         agent = VoiceInterviewAgent()
-        agent.conduct_interview()
+        
+        # Get user choice
+        print("Just type 1, 2, or 3 (or say 'schedule', 'chat', 'view'):")
+        choice = input("What sounds good? ").strip().lower()
+        
+        if choice in ['1', 'one', 'schedule', 'scheduling', 'book']:
+            print("\n📅 Perfect! Let's get you scheduled...")
+            print("This will be quick and easy - just need a few details.")
+            session_id = agent.schedule_interview()
+            if session_id:
+                print(f"\n🎉 Amazing! Your interview is all set!")
+                print(f"✅ Confirmation ID: {session_id}")
+                print("I can't wait to chat with you!")
+            else:
+                print("\n😔 Oops! Something went wrong with scheduling.")
+                print("Want to try again or chat now instead?")
+                
+        elif choice in ['2', 'two', 'conduct', 'interview', 'start', 'chat', 'now']:
+            print("\n🎯 Fantastic! Let's start our conversation...")
+            print("Get comfortable - this is going to be fun!")
+            agent.conduct_interview()
+            
+        elif choice in ['3', 'three', 'view', 'sessions', 'scheduled', 'appointments']:
+            print("\n📋 Let me check your scheduled interviews...")
+            sessions = agent.scheduler.get_scheduled_sessions()
+            if sessions:
+                print(f"\n📅 Great! You have {len(sessions)} scheduled interview{'s' if len(sessions) != 1 else ''}:")
+                print()
+                for i, session in enumerate(sessions, 1):
+                    status_emoji = "✅" if session['status'] == 'confirmed' else "🔄" if session['status'] == 'completed' else "❌"
+                    print(f"  {i}. {status_emoji} {session['candidate_name']}")
+                    print(f"     📅 {session['formatted_time']}")
+                    print(f"     📊 Status: {session['status'].title()}")
+                    print()
+            else:
+                print("\n📅 No scheduled interviews yet.")
+                print("Would you like to schedule one now? Just run this again and choose option 1!")
+                
+        else:
+            print(f"\nHmm, I didn't quite catch that (you said '{choice}').")
+            print("No worries! Let's just start chatting right now - that's the fun part anyway! 🎉")
+            agent.conduct_interview()
         
     except KeyboardInterrupt:
-        print("\n\n⚠️  Program interrupted by user")
+        print("\n\n👋 Thanks for stopping by! Hope to chat with you soon!")
     except Exception as e:
-        print(f"\n❌ Unexpected error: {e}")
-        print("Please check your configuration and try again.")
+        print(f"\n😅 Oops! I ran into a little hiccup: {e}")
+        print("Don't worry - these things happen! Try running the program again.")
 
 if __name__ == "__main__":
     main()

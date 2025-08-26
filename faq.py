@@ -54,21 +54,21 @@ class FAQModule:
         
         # Default hardcoded FAQ data
         return {
-            "what is the cost of the program?": "The program costs $500 for the complete course package, which includes all materials, access to our learning platform, and certification upon completion.",
-            "do I need a technical background?": "No, beginners are welcome! While some basic computer skills are helpful, we start from the fundamentals and build up. Our program is designed to accommodate various skill levels.",
-            "can I do this part-time?": "Yes, absolutely! The program is designed to be flexible and can be completed part-time. Most students spend 10-15 hours per week and complete the program in 3-6 months.",
-            "how long does the program take?": "The program typically takes 3-6 months to complete, depending on your pace and time commitment. Full-time students can finish in 3 months, while part-time students usually take 4-6 months.",
-            "what will I learn in this program?": "You'll learn fundamental AI concepts, machine learning algorithms, data preprocessing, model training, and real-world project implementation. The curriculum covers Python programming, statistics, and practical AI applications.",
-            "is there a certificate upon completion?": "Yes! Upon successful completion of the program, you'll receive a professional certificate that's recognized by industry partners and can be added to your resume and LinkedIn profile.",
-            "do you provide job placement assistance?": "Yes, we offer career support including resume building, interview preparation, and connections to our industry partner network. Many of our graduates find positions within 3 months of completion.",
-            "what are the prerequisites?": "Basic computer literacy, high school mathematics, and a willingness to learn are the main prerequisites. No prior programming experience is required, though it can be helpful.",
-            "can I access the materials after completion?": "Yes, you'll have lifetime access to all course materials, updates, and the learning platform. This allows you to review concepts and stay current with new developments.",
-            "is there a money-back guarantee?": "We offer a 30-day money-back guarantee. If you're not satisfied with the program within the first 30 days, we'll provide a full refund, no questions asked.",
-            "what support is available during the program?": "You'll have access to our community forum, weekly office hours with instructors, and direct support through our help desk. We're committed to your success throughout the program.",
-            "are there any additional costs?": "The $500 covers everything you need to complete the program. There are no hidden fees or additional costs for software, tools, or materials.",
-            "can I start anytime?": "Yes! Our program is self-paced and you can start whenever you're ready. New cohorts begin monthly, but you can begin your learning journey at any time.",
-            "what if I fall behind or need more time?": "No problem! The program is designed to be flexible. You can take breaks when needed and resume where you left off. We want you to succeed at your own pace.",
-            "do you offer payment plans?": "Yes, we offer flexible payment plans. You can pay the full $500 upfront or choose from our installment options: 2 payments of $275 or 3 payments of $190."
+            "what is the cost of the program?": "Great question! Our program is $500 for everything - that's your complete course package with all materials, full access to our learning platform, and your certification when you graduate. We think it's pretty great value for everything you get!",
+            "do I need a technical background?": "Not at all! We absolutely love working with beginners. While having some basic computer skills helps, we really do start from the ground up. Our program is specifically designed for people from all different backgrounds - that's what makes our community so amazing!",
+            "can I do this part-time?": "Absolutely! We totally get that life is busy. Most of our students are juggling work, family, or other commitments. Typically, folks spend about 10-15 hours per week on the program and finish in 3-6 months. It's completely flexible to fit your schedule.",
+            "how long does the program take?": "It really depends on you and your schedule! If you're going full-time, you could wrap up in about 3 months. Most part-time students take around 4-6 months, but honestly, we want you to go at whatever pace works best for you.",
+            "what will I learn in this program?": "Oh, you're going to love this! You'll dive into fundamental AI concepts, machine learning algorithms, data preprocessing, and model training. Plus, you'll work on real-world projects that you can actually show off to employers. We cover Python programming, statistics, and tons of practical AI applications.",
+            "is there a certificate upon completion?": "Yes! You'll get a professional certificate that our industry partners recognize. It looks great on your resume and LinkedIn profile - our graduates are always excited to show it off!",
+            "do you provide job placement assistance?": "We sure do! We're really invested in your success beyond the program. We help with resume building, interview prep, and we'll connect you with our network of industry partners. It's pretty exciting - many of our graduates land positions within 3 months!",
+            "what are the prerequisites?": "Keep it simple! You just need basic computer skills, high school level math, and most importantly - enthusiasm to learn! No programming experience required, though if you have some, that's a nice bonus.",
+            "can I access the materials after completion?": "Forever and always! Once you're in, you're in for life. You'll have access to all materials, any updates we make, and the full learning platform. It's great for refreshing your knowledge or keeping up with new developments.",
+            "is there a money-back guarantee?": "Absolutely! We offer a full 30-day money-back guarantee. If for any reason you're not happy with the program in your first month, just let us know and we'll refund everything, no questions asked. We're that confident you'll love it!",
+            "what support is available during the program?": "We've got your back! You'll have access to our amazing community forum, weekly office hours with instructors (they're really helpful!), and direct support through our help desk. We're genuinely committed to seeing you succeed.",
+            "are there any additional costs?": "Nope! That $500 covers absolutely everything. No surprise fees, no hidden costs for software or tools. What you see is what you get - we believe in keeping things transparent and simple.",
+            "can I start anytime?": "Yes! That's one of the best parts - you can start whenever you're ready. While we have new cohorts starting monthly, you can jump into your learning journey at any time that works for you.",
+            "what if I fall behind or need more time?": "Life happens, and we totally get that! The program is super flexible - you can take breaks when you need them and pick up right where you left off. We want you to succeed at your own pace, not ours.",
+            "do you offer payment plans?": "We do! We know $500 upfront isn't always easy, so you can choose what works for you: pay it all at once, split it into 2 payments of $275, or spread it over 3 payments of $190. Whatever makes it easier for you!"
         }
     
     def _initialize_model(self):
@@ -103,12 +103,11 @@ class FAQModule:
             str: Best matching answer or fallback response
         """
         if not self.model or self.question_embeddings is None:
-            return "I'm sorry, the FAQ system is not available right now."
+            return "I'm so sorry, but I'm having some technical difficulties with my knowledge base right now. Could you try asking again in a moment?"
         
         try:
             # Encode the user query
             query_embedding = self.model.encode([query])
-            
             # Calculate cosine similarity between query and all questions
             similarities = cosine_similarity(query_embedding, self.question_embeddings).flatten()
             
@@ -125,11 +124,11 @@ class FAQModule:
                 return best_answer
             else:
                 print(f"❓ No FAQ match found for: '{query}' (best similarity: {best_similarity:.3f})")
-                return "I don't have a specific answer for that question. Could you please rephrase it or ask something else?"
+                return "Hmm, I don't have a specific answer for that one in my knowledge base. Could you try rephrasing it, or maybe ask about something else? I'm here to help however I can!"
                 
         except Exception as e:
             print(f"❌ Error in FAQ matching: {e}")
-            return "I'm sorry, I encountered an error while searching the FAQ. Please try again."
+            return "Oops! I ran into a little hiccup while searching for that answer. Could you give it another try? I promise I'm usually better at this!"
     
     def get_similar_questions(self, query: str, top_k: int = 3) -> List[Tuple[str, float]]:
         """
